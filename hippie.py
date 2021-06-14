@@ -199,7 +199,7 @@ def fuzzyfind(primer, collection, sort_results=True):
     """
     suggestions = []
     for item in collection:
-        if score := fuzzy_score(primer.lower(), item):
+        if score := fuzzy_score(primer, item):
             suggestions.append((score, item))
 
     if sort_results:
@@ -209,24 +209,46 @@ def fuzzyfind(primer, collection, sort_results=True):
 
 
 def fuzzy_score(primer, item):
-    start, pos, prev, score = -1, -1, 0, 1
+    score = 0
+    prev = -1
     item_l = item.lower()
-    for c in primer:
-        pos = item_l.find(c, pos + 1)
+    for c, cl in zip(primer, primer.lower()):
+        pos, _score = find_char(cl, item, prev + 1)
         if pos == -1:
-            return
-        if start == -1:
-            start = pos
+            if prev > 1:
+                pos = item_l.rfind(cl, 0, prev)
+                _score = prev - pos
+            if pos == -1:
+                return None
 
-        # Update score if not at start of the word
-        if pos > 0:
-            pc = item[pos - 1]
-            if pc in "_-" or pc.isupper() < item[pos].isupper():
-                continue
-        score += pos - prev
+        score += 2 * _score
+        if pos == 0:
+            score -= 1
+        if _score == 0 and c == item[pos]:
+            score -= 0.5 if c == cl else 2
+
+        if score > 10:
+            return None
         prev = pos
 
     return (score, len(item))
+
+
+def find_char(c, string, start):
+    prev = ''
+    first_seen = -1
+    for idx, ch in enumerate(string[start:], start):
+        if c == ch.lower():
+            if idx == start:
+                return start, 0
+            if first_seen == -1:
+                first_seen = idx
+            if ch.isupper() and (not prev or prev.islower()):
+                return idx, 0
+            if prev in "-_":
+                return idx, 0
+        prev = ch
+    return first_seen, first_seen - start
 
 
 def ldistinct(seq):
