@@ -31,7 +31,23 @@ def plugin_unloaded():
             uninstall_low_priority_package()
 
 
+from contextlib import contextmanager
+import time
+import threading
+
+
+@contextmanager
+def print_runtime(message):
+    start_time = time.perf_counter()
+    yield
+    end_time = time.perf_counter()
+    duration = round((end_time - start_time) * 1000)
+    thread_name = threading.current_thread().name[0]
+    print('{} took {}ms [{}]'.format(message, duration, thread_name))
+
+
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
+    @print_runtime("completion")
     def run(self, edit):
         global last_view, matching, last_index, initial_primer
         window = self.view.window()
