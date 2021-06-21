@@ -2,6 +2,7 @@ import sublime
 import sublime_plugin
 from collections import defaultdict
 from itertools import chain
+from pathlib import Path
 import re
 
 flatten = chain.from_iterable
@@ -18,6 +19,17 @@ history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
 
 def plugin_loaded():
     install_low_priority_package()
+
+
+def plugin_unloaded():
+    try:
+        import package_control
+    except ImportError:
+        pass
+    else:
+        this_package_name = Path(__file__).parent.stem
+        if package_control.events.remove(this_package_name):
+            uninstall_low_priority_package()
 
 
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
@@ -187,16 +199,27 @@ files_to_copy = {
 }
 
 
-def install_low_priority_package() -> None:
-    ipp = sublime.installed_packages_path()
-    this_package_name = os.path.split(os.path.dirname(__file__))[1]
-    if this_package_name.endswith(".sublime-package"):
-        this_package_name = this_package_name[:-16]
+unloader = """
+import os, sys
+def plugin_loaded():
+    if "{main_plugin}" not in sys.modules:
+        os.remove(r"{package_fpath}")
+        print("Uninstalled", r"{package_fpath}")
+"""
 
+
+def install_low_priority_package() -> None:
+    this_plugin_name = Path(__file__).stem
+    this_package_name = Path(__file__).parent.stem
+    this_module = f"{this_package_name}.{this_plugin_name}"
+
+    ipp = sublime.installed_packages_path()
     package_fpath = os.path.join(ipp, package_name)
+    unloader_code = unloader.format(main_plugin=this_module, package_fpath=package_fpath)
+
     if os.path.exists(package_fpath):
         with zipfile.ZipFile(package_fpath) as zfile:
-            zipped_files = zfile.infolist()
+            zipped_files = [f for f in zfile.infolist() if f.filename != "unloader.py"]
             if files_to_copy.keys() == {f.filename for f in zipped_files}:
                 for f in zipped_files:
                     contents = sublime.load_binary_resource(
@@ -206,7 +229,13 @@ def install_low_priority_package() -> None:
                     if zlib.crc32(contents) != f.CRC:
                         break
                 else:
-                    return None
+                    try:
+                        f = zfile.getinfo("unloader.py")
+                    except KeyError:
+                        pass
+                    else:
+                        if zlib.crc32(unloader_code.encode()) == f.CRC:
+                            return None
 
     with zipfile.ZipFile(package_fpath, "w") as zfile:
         for target, source in files_to_copy.items():
@@ -214,5 +243,12 @@ def install_low_priority_package() -> None:
                 f"Packages/{this_package_name}/{source}"
             )
             zfile.writestr(target, contents)
+        zfile.writestr("unloader.py", unloader_code)
 
     print("Installed", package_fpath)
+
+
+def uninstall_low_priority_package() -> None:
+    ipp = sublime.installed_packages_path()
+    package_fpath = os.path.join(ipp, package_name)
+    os.remove(package_fpath)
