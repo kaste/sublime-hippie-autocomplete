@@ -16,6 +16,10 @@ last_index = 0
 history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
 
 
+def plugin_loaded():
+    install_low_priority_package()
+
+
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         global last_view, matching, last_index, initial_primer
@@ -169,3 +173,46 @@ def ldistinct(seq):
             seen.add(item)
             res.append(item)
     return res
+
+
+#  Install a *lowest* priority package for the key binding
+
+import os
+import zipfile
+import zlib
+package_name = "1_hippie_key_binding.sublime-package"
+files_to_copy = {
+    "Default.sublime-keymap": "Default.sublime-keymap.json",
+    ".python-version": ".python-version",
+}
+
+
+def install_low_priority_package() -> None:
+    ipp = sublime.installed_packages_path()
+    this_package_name = os.path.split(os.path.dirname(__file__))[1]
+    if this_package_name.endswith(".sublime-package"):
+        this_package_name = this_package_name[:-16]
+
+    package_fpath = os.path.join(ipp, package_name)
+    if os.path.exists(package_fpath):
+        with zipfile.ZipFile(package_fpath) as zfile:
+            zipped_files = zfile.infolist()
+            if files_to_copy.keys() == {f.filename for f in zipped_files}:
+                for f in zipped_files:
+                    contents = sublime.load_binary_resource(
+                        f"Packages/{this_package_name}"
+                        f"/{files_to_copy[f.filename]}"
+                    )
+                    if zlib.crc32(contents) != f.CRC:
+                        break
+                else:
+                    return None
+
+    with zipfile.ZipFile(package_fpath, "w") as zfile:
+        for target, source in files_to_copy.items():
+            contents = sublime.load_resource(
+                f"Packages/{this_package_name}/{source}"
+            )
+            zfile.writestr(target, contents)
+
+    print("Installed", package_fpath)
