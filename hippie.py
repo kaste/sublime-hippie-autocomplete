@@ -1,13 +1,14 @@
 import sublime
 import sublime_plugin
 from collections import defaultdict
+from itertools import chain
 import re
 
+flatten = chain.from_iterable
 VIEW_TOO_BIG = 1000000
 WORD_PATTERN = re.compile(r'(\w{2,})', re.S)  # Start from words of length 2
 
-words_by_view = {}
-words_global = set()
+index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
 last_view = None
 initial_primer = ""
 matching = []
@@ -26,24 +27,28 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         primer_region = sublime.Region(word_region.a, first_sel.end())
         primer = self.view.substr(primer_region)
 
-        def _matching():
-            yield primer  # Always be able to cycle back
+        def _matching(primer, exclude):
             if primer in history[window]:
                 yield history[window][primer]
-            yield from fuzzyfind(primer, words_by_view[self.view])
-            yield from fuzzyfind(primer, words_global)
+            yield from fuzzyfind(primer, index_for_view(self.view) - exclude)
+            yield from fuzzyfind(
+                primer,
+                index_for_other_views(self.view) - index_for_view(self.view)
+            )
+            yield primer  # Always be able to cycle back
 
         if last_view is not self.view or not matching or primer != matching[last_index]:
-            if words_by_view[self.view] is None:
-                word_under_cursor = (
-                    primer
-                    if word_region == primer_region
-                    else self.view.substr(word_region)
-                )
-                index_view(self.view, exclude={word_under_cursor})
+            word_under_cursor = (
+                primer
+                if word_region == primer_region
+                else self.view.substr(word_region)
+            )
             last_view = self.view
             initial_primer = primer
-            matching = ldistinct(_matching())
+            matching = ldistinct(_matching(
+                initial_primer,
+                exclude={word_under_cursor}
+            ))
             last_index = 0
 
         if matching[last_index] == primer:
@@ -64,19 +69,40 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
 class HippieListener(sublime_plugin.EventListener):
     def on_init(self, views):
         for view in views:
-            index_view(view)
+            index_for_view(view)
 
-    def on_modified_async(self, view):
-        words_by_view[view] = None  # Drop cached word set
+    def on_close(self, view):
+        global index
+        index.pop(view, None)
 
 
-def index_view(view, exclude=set()):
+
+def index_for_view(view):
+    global index
+    change_count = view.change_count()
+    try:
+        _change_count, words = index[view]
+        if _change_count != change_count:
+            raise KeyError("view has changed")
+    except KeyError:
+        words = _index_view(view)
+        index[view] = (change_count, words)
+    return words
+
+
+def _index_view(view):
     if view.size() > VIEW_TOO_BIG:
-        return
+        return set()
     contents = view.substr(sublime.Region(0, view.size()))
-    words = set(WORD_PATTERN.findall(contents)) - exclude
-    words_by_view[view] = words
-    words_global.update(words)
+    return set(WORD_PATTERN.findall(contents))
+
+
+def index_for_other_views(view):
+    return set(flatten(index_for_view(v) for v in other_views(view)))
+
+
+def other_views(view):
+    return (v for v in view.window().views() if v != view)
 
 
 def fuzzyfind(primer, collection, sort_results=True):
