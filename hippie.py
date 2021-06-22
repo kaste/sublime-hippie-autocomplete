@@ -237,15 +237,24 @@ def install_low_priority_package() -> None:
                         if zlib.crc32(unloader_code.encode()) == f.CRC:
                             return None
 
-    with zipfile.ZipFile(package_fpath, "w") as zfile:
-        for target, source in files_to_copy.items():
-            contents = sublime.load_resource(
-                f"Packages/{this_package_name}/{source}"
-            )
-            zfile.writestr(target, contents)
-        zfile.writestr("unloader.py", unloader_code)
+    def create_package():
+        with zipfile.ZipFile(package_fpath, "w") as zfile:
+            for target, source in files_to_copy.items():
+                contents = sublime.load_resource(
+                    f"Packages/{this_package_name}/{source}"
+                )
+                zfile.writestr(target, contents)
+            zfile.writestr("unloader.py", unloader_code)
 
-    print("Installed", package_fpath)
+        print("Installed", package_fpath)
+
+    try:
+        os.remove(package_fpath)
+    except OSError:
+        create_package()
+    else:
+        # wait for Sublime Text to unload the old package
+        sublime.set_timeout(create_package, 1000)
 
 
 def uninstall_low_priority_package() -> None:
