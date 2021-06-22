@@ -7,7 +7,6 @@ import re
 
 flatten = chain.from_iterable
 VIEW_TOO_BIG = 1000000
-WORD_PATTERN = re.compile(r'(\w{2,})', re.S)  # Start from words of length 2
 
 index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
 last_view = None
@@ -116,7 +115,16 @@ def _index_view(view):
     if view.size() > VIEW_TOO_BIG:
         return set()
     contents = view.substr(sublime.Region(0, view.size()))
-    return set(WORD_PATTERN.findall(contents))
+    char_class = _get_char_class(view)
+    pattern = r"{}{{2,}}".format(char_class)
+    return set(re.findall(pattern, contents))
+
+
+def _get_char_class(view) -> str:
+    word_separators = view.settings().get("word_separators", "")
+    return r"[^\s{}]".format(
+        word_separators.replace("\\", "\\\\").replace("]", r"\]")
+    )
 
 
 def index_for_other_views(view):
