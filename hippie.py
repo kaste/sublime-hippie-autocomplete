@@ -97,6 +97,35 @@ class HippieListener(sublime_plugin.EventListener):
         global history
         history.pop(window, None)
 
+    def on_query_context(self, view, key, operator, operand, match_all):
+        if key != "happy_hippie":
+            return None
+
+        if operator != sublime.OP_EQUAL:
+            print(f"Context '{key}' only supports operator 'equal'.")
+            return False
+
+        if operand is not True:
+            print(f"Context '{key}' only supports operand 'true'.")
+            return False
+
+        char_class = _get_char_class(view)
+        re_cc = re.compile(r"{}+".format(char_class))
+        for s in view.sel():
+            if s.empty():
+                if (
+                    s.a == 0
+                    or not re_cc.fullmatch(view.substr(s.a - 1))
+                ):
+                    # abort: previous char contains word_separators
+                    return False
+            else:
+                if not re_cc.fullmatch(view.substr(s)):
+                    # abort: selection contains word_separators
+                    return False
+
+        return True
+
 
 def index_for_view(view):
     global index
