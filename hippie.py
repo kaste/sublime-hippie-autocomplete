@@ -63,7 +63,10 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
                 matching[last_index]
             )
 
-        history[window][initial_primer] = matching[last_index]
+        if matching[last_index] == initial_primer:
+            history[window].pop(initial_primer, None)
+        else:
+            history[window][initial_primer] = matching[last_index]
 
 
 class HippieListener(sublime_plugin.EventListener):
