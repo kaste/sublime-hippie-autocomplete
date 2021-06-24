@@ -1,0 +1,23 @@
+%YAML 1.2
+---
+name: Hippie Python
+extends: 'Packages/Python/Python.sublime-syntax'
+hidden: true
+scope: source.python.hippie
+contexts:
+  main:
+    - match: 'python\("""'
+      scope: entity.name.tag
+      embed: scope:source.python
+      escape: '"""\)'
+      escape_captures:
+        0: entity.name.tag
+
+    - match: 'json\("""'
+      scope: entity.name.tag
+      embed: scope:source.json
+      escape: '"""\)'
+      escape_captures:
+        0: entity.name.tag
+
+    - include: statements

@@ -246,19 +246,36 @@ import os
 import zipfile
 import zlib
 package_name = "1_hippie_key_binding.sublime-package"
-files_to_copy = {
-    "Default.sublime-keymap": "Default.sublime-keymap.json",
-    ".python-version": ".python-version",
-}
 
 
-unloader = """
+class HappyFileSyntax(sublime_plugin.EventListener):
+    def on_load(self, view):
+        if view.file_name() == __file__:
+            this_package_name = Path(__file__).parent.stem
+            syntax_file = f"Packages/{this_package_name}/hippie python.sublime-syntax"
+            view.assign_syntax(syntax_file)
+
+
+json = python = lambda s: s.lstrip()
+keymap = json("""
+[
+    { "keys": ["tab"], "command": "hippie_word_completion", "context": [
+        { "key": "read_only", "operator": "not_equal" },
+        { "key": "auto_complete_visible", "operand": false },
+        { "key": "has_snippet", "operand": false  },
+        { "key": "has_next_field", "operand": false },
+        { "key": "happy_hippie" },
+    ]}
+]
+""")
+
+unloader = python("""
 import os, sys
 def plugin_loaded():
     if "{main_plugin}" not in sys.modules:
         os.remove(r"{package_fpath}")
         print("Uninstalled", r"{package_fpath}")
-"""
+""")
 
 
 def install_low_priority_package() -> None:
@@ -268,36 +285,30 @@ def install_low_priority_package() -> None:
 
     ipp = sublime.installed_packages_path()
     package_fpath = os.path.join(ipp, package_name)
-    unloader_code = unloader.format(main_plugin=this_module, package_fpath=package_fpath)
+
+    files_to_copy = {
+        ".python-version": "3.8\n",
+        "Default.sublime-keymap": keymap,
+        "unloader.py": unloader.format(
+            main_plugin=this_module, package_fpath=package_fpath
+        )
+    }
 
     if os.path.exists(package_fpath):
         with zipfile.ZipFile(package_fpath) as zfile:
-            zipped_files = [f for f in zfile.infolist() if f.filename != "unloader.py"]
+            zipped_files = zfile.infolist()
             if files_to_copy.keys() == {f.filename for f in zipped_files}:
                 for f in zipped_files:
-                    contents = sublime.load_binary_resource(
-                        f"Packages/{this_package_name}"
-                        f"/{files_to_copy[f.filename]}"
-                    )
-                    if zlib.crc32(contents) != f.CRC:
+                    contents = files_to_copy[f.filename]
+                    if zlib.crc32(contents.encode()) != f.CRC:
                         break
                 else:
-                    try:
-                        f = zfile.getinfo("unloader.py")
-                    except KeyError:
-                        pass
-                    else:
-                        if zlib.crc32(unloader_code.encode()) == f.CRC:
-                            return None
+                    return None
 
     def create_package():
         with zipfile.ZipFile(package_fpath, "w") as zfile:
             for target, source in files_to_copy.items():
-                contents = sublime.load_resource(
-                    f"Packages/{this_package_name}/{source}"
-                )
-                zfile.writestr(target, contents)
-            zfile.writestr("unloader.py", unloader_code)
+                zfile.writestr(target, source)
 
         print("Installed", package_fpath)
 
