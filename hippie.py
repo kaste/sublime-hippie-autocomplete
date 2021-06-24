@@ -75,6 +75,9 @@ class HippieListener(sublime_plugin.EventListener):
         global index
         index.pop(view, None)
 
+    def on_pre_close_window(self, window):
+        global history
+        history.pop(window, None)
 
 
 def index_for_view(view):
