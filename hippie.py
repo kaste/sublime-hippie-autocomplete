@@ -5,14 +5,21 @@ from itertools import chain, cycle
 from pathlib import Path
 import re
 
+
+from typing import (
+    Dict, Generic, Iterable, Iterator, List, Optional, Set, Tuple, TypeVar
+)
+T = TypeVar("T")
+
+
 flatten = chain.from_iterable
 VIEW_TOO_BIG = 1000000
 
 index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
-last_view = None
-initial_primer = ""
-matching = []
-last_suggestion = None
+last_view = None  # type: Optional[sublime.View]
+initial_primer = ""  # type: str
+matching = None  # type: Optional[back_n_forth_iterator[str]]
+last_suggestion = None  # type: Optional[str]
 history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
 
 
@@ -58,7 +65,7 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         primer_region = sublime.Region(word_region.a, first_sel.end())
         primer = self.view.substr(primer_region)
 
-        def _matching(primer, exclude):
+        def _matching(primer, exclude) -> Iterator[str]:
             if primer in history[window]:
                 yield history[window][primer]
             views_index = index_for_view(self.view)
@@ -109,7 +116,7 @@ class HippieListener(sublime_plugin.EventListener):
         global history
         history.pop(window, None)
 
-    def on_query_context(self, view, key, operator, operand, match_all):
+    def on_query_context(self, view, key, operator, operand, match_all) -> Optional[bool]:
         if key != "happy_hippie":
             return None
 
@@ -139,7 +146,7 @@ class HippieListener(sublime_plugin.EventListener):
         return True
 
 
-def index_for_view(view):
+def index_for_view(view: sublime.View) -> Set[str]:
     global index
     change_count = view.change_count()
     try:
@@ -152,7 +159,7 @@ def index_for_view(view):
     return words
 
 
-def _index_view(view):
+def _index_view(view: sublime.View) -> Set[str]:
     if view.size() > VIEW_TOO_BIG:
         return set()
     contents = view.substr(sublime.Region(0, view.size()))
@@ -176,7 +183,7 @@ def other_views(view):
     return (v for v in view.window().views() if v != view)
 
 
-def fuzzyfind(primer, collection, sort_results=True):
+def fuzzyfind(primer: str, collection: Iterable[str], sort_results=True) -> List[str]:
     """
     Args:
         primer (str): A partial string which is typically entered by a user.
@@ -204,8 +211,8 @@ def fuzzyfind(primer, collection, sort_results=True):
         return [z[-1] for z in sorted(suggestions, key=lambda x: x[0])]
 
 
-def fuzzy_score(primer, item):
-    pos, score = -1, 0
+def fuzzy_score(primer: str, item: str) -> Optional[Tuple[float, int]]:
+    pos, score = -1, 0.0
     item_l = item.lower()
     primer_l = primer.lower()
     for idx in range(len(primer)):
@@ -226,7 +233,7 @@ def fuzzy_score(primer, item):
     return (score, len(item))
 
 
-def find_char(primer_rest, item, item_l, start):
+def find_char(primer_rest, item, item_l, start: int) -> Tuple[int, float]:
     prev = ''
     first_seen = -1
     needle = primer_rest[0]
@@ -254,7 +261,7 @@ def find_char(primer_rest, item, item_l, start):
     return first_seen, first_seen - (start - 1)
 
 
-def unique_everseen(seq):
+def unique_everseen(seq: Iterable[T]) -> Iterator[T]:
     """Iterates over sequence skipping duplicates"""
     seen = set()
     for item in seq:
