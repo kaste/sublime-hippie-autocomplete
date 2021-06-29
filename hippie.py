@@ -212,8 +212,9 @@ def fuzzy_score(primer, item):
     score = 0
     prev = -1
     item_l = item.lower()
-    for c, cl in zip(primer, primer.lower()):
-        pos, _score = find_char(cl, item, prev + 1)
+    primer_l = primer.lower()
+    for idx, (c, cl) in enumerate(zip(primer, primer.lower())):
+        pos, _score = find_char(primer_l[idx:], item, prev + 1)
         if pos == -1:
             if prev > 1:
                 pos = item_l.rfind(cl, 0, prev)
@@ -234,11 +235,12 @@ def fuzzy_score(primer, item):
     return (score, len(item))
 
 
-def find_char(c, string, start):
+def find_char(primer_rest, item, start):
     prev = ''
     first_seen = -1
-    for idx, ch in enumerate(string[start:], start):
-        if c == ch.lower():
+    needle = primer_rest[0]
+    for idx, ch in enumerate(item[start:], start):
+        if needle == ch.lower():
             if idx == start:
                 return start, 0
             if first_seen == -1:
@@ -248,7 +250,12 @@ def find_char(c, string, start):
             if prev in "-_":
                 return idx, 0
         prev = ch
-    return first_seen, first_seen - start
+
+    if first_seen == -1:
+        return -1, -1
+    if item.endswith(primer_rest):
+        return len(item) - len(primer_rest), 0
+    return first_seen, first_seen - (start - 1)
 
 
 def ldistinct(seq):
