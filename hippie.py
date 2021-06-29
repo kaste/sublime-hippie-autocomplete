@@ -1,7 +1,7 @@
 import sublime
 import sublime_plugin
 from collections import defaultdict
-from itertools import chain
+from itertools import chain, cycle
 from pathlib import Path
 import re
 
@@ -12,7 +12,7 @@ index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
 last_view = None
 initial_primer = ""
 matching = []
-last_index = 0
+last_suggestion = None
 history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
 
 
@@ -49,7 +49,7 @@ def print_runtime(message):
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     @print_runtime("completion")
     def run(self, edit):
-        global last_view, matching, last_index, initial_primer
+        global last_view, matching, initial_primer, last_suggestion
         window = self.view.window()
         assert window
 
@@ -61,14 +61,14 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         def _matching(primer, exclude):
             if primer in history[window]:
                 yield history[window][primer]
-            yield from fuzzyfind(primer, index_for_view(self.view) - exclude)
+            views_index = index_for_view(self.view)
+            yield from fuzzyfind(primer, views_index - exclude)
             yield from fuzzyfind(
-                primer,
-                index_for_other_views(self.view) - index_for_view(self.view)
+                primer, index_for_other_views(self.view) - views_index
             )
             yield primer  # Always be able to cycle back
 
-        if last_view is not self.view or not matching or primer != matching[last_index]:
+        if last_view is not self.view or not matching or primer != last_suggestion:
             word_under_cursor = (
                 primer
                 if word_region == primer_region
@@ -76,28 +76,24 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             )
             last_view = self.view
             initial_primer = primer
-            matching = ldistinct(_matching(
+            matching = cycle(unique_everseen(_matching(
                 initial_primer,
                 exclude={word_under_cursor}
-            ))
-            last_index = 0
+            )))
 
-        if matching[last_index] == primer:
-            last_index += 1
-        if last_index >= len(matching):
-            last_index = 0
+        last_suggestion = next(matching)
 
         for region in self.view.sel():
             self.view.replace(
                 edit,
                 sublime.Region(self.view.word(region).a, region.end()),
-                matching[last_index]
+                last_suggestion
             )
 
-        if matching[last_index] == initial_primer:
+        if last_suggestion == initial_primer:
             history[window].pop(initial_primer, None)
         else:
-            history[window][initial_primer] = matching[last_index]
+            history[window][initial_primer] = last_suggestion
 
 
 class HippieListener(sublime_plugin.EventListener):
@@ -258,15 +254,13 @@ def find_char(primer_rest, item, item_l, start):
     return first_seen, first_seen - (start - 1)
 
 
-def ldistinct(seq):
+def unique_everseen(seq):
     """Iterates over sequence skipping duplicates"""
     seen = set()
-    res = []
     for item in seq:
         if item not in seen:
             seen.add(item)
-            res.append(item)
-    return res
+            yield item
 
 
 #  Install a *lowest* priority package for the key binding
