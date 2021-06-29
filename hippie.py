@@ -53,9 +53,16 @@ def print_runtime(message):
     print('{} took {}ms [{}]'.format(message, duration, thread_name))
 
 
+def get_primer(view: sublime.View) -> str:
+    first_sel = view.sel()[0]
+    word_region = view.word(first_sel)
+    primer_region = sublime.Region(word_region.a, first_sel.end())
+    return view.substr(primer_region)
+
+
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     @print_runtime("completion")
-    def run(self, edit):
+    def run(self, edit, forwards=True) -> None:
         global last_view, matching, initial_primer, last_suggestion
         window = self.view.window()
         assert window
@@ -66,6 +73,11 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         primer = self.view.substr(primer_region)
 
         def _matching(primer, exclude) -> Iterator[str]:
+            assert window  # fix false mypy complain
+            # Add `primer` at the front to allow going back to it, either
+            # using `shift+tab` or when cycling through all possible
+            # completions.
+            yield primer
             if primer in history[window]:
                 yield history[window][primer]
             views_index = index_for_view(self.view)
@@ -73,7 +85,6 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             yield from fuzzyfind(
                 primer, index_for_other_views(self.view) - views_index
             )
-            yield primer  # Always be able to cycle back
 
         if last_view is not self.view or not matching or primer != last_suggestion:
             word_under_cursor = (
@@ -83,12 +94,20 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             )
             last_view = self.view
             initial_primer = primer
-            matching = cycle(unique_everseen(_matching(
+            matching = back_n_forth_iterator(cycle(unique_everseen(_matching(
                 initial_primer,
                 exclude={word_under_cursor}
-            )))
+            ))))
+            next(matching)  # skip the `primer` we added at the front
 
-        last_suggestion = next(matching)
+        if forwards:
+            last_suggestion = next(matching)
+        else:
+            try:
+                last_suggestion = matching.prev()
+            except ValueError:
+                window.status_message("at first suggestions")
+                return
 
         for region in self.view.sel():
             self.view.replace(
@@ -117,9 +136,13 @@ class HippieListener(sublime_plugin.EventListener):
         history.pop(window, None)
 
     def on_query_context(self, view, key, operator, operand, match_all) -> Optional[bool]:
-        if key != "happy_hippie":
-            return None
+        if key == "happy_hippie":
+            return self.happy_hippie_key(view, key, operator, operand, match_all)
+        elif key == "just_hippie_completed":
+            return self.just_hippie_completed_key(view, key, operator, operand, match_all)
+        return None
 
+    def happy_hippie_key(self, view, key, operator, operand, match_all) -> bool:
         if operator != sublime.OP_EQUAL:
             print(f"Context '{key}' only supports operator 'equal'.")
             return False
@@ -144,6 +167,15 @@ class HippieListener(sublime_plugin.EventListener):
                     return False
 
         return True
+
+    def just_hippie_completed_key(
+        self, view, key, operator, operand, match_all
+    ) -> bool:
+        global last_view, matching, last_suggestion
+        primer = get_primer(view)
+        if view == last_view and matching and primer == last_suggestion:
+            return True
+        return False
 
 
 def index_for_view(view: sublime.View) -> Set[str]:
@@ -270,6 +302,39 @@ def unique_everseen(seq: Iterable[T]) -> Iterator[T]:
             yield item
 
 
+class back_n_forth_iterator(Generic[T]):
+    def __init__(self, iterable: Iterable[T]) -> None:
+        self._it = iter(iterable)  # type: Iterator[T]
+        self._index = None  # type: Optional[int]
+        self._cache = []  # type: List[T]
+
+    def __iter__(self) -> Iterator[T]:
+        return self
+
+    def __next__(self) -> T:
+        if self._index is not None:
+            if self._index < len(self._cache) - 1:
+                self._index += 1
+                return self._cache[self._index]
+            else:
+                self._index = None
+
+        val = next(self._it)
+        self._cache.append(val)
+        return val
+
+    next == __next__
+
+    def prev(self) -> T:
+        if self._index is None:
+            self._index = len(self._cache) - 1
+        elif self._index <= 0:
+            raise ValueError("can't rewind any further")
+        self._index -= 1
+        val = self._cache[self._index]
+        return val
+
+
 #  Install a *lowest* priority package for the key binding
 
 import os
@@ -289,12 +354,22 @@ class HappyFileSyntax(sublime_plugin.EventListener):
 json = python = lambda s: s.lstrip()
 keymap = json("""
 [
-    { "keys": ["tab"], "command": "hippie_word_completion", "context": [
+    { "keys": ["tab"], "command": "hippie_word_completion",
+      "context": [
         { "key": "read_only", "operator": "not_equal" },
         { "key": "auto_complete_visible", "operand": false },
         { "key": "has_snippet", "operand": false  },
         { "key": "has_next_field", "operand": false },
         { "key": "happy_hippie" },
+    ]},
+    { "keys": ["shift+tab"], "command": "hippie_word_completion",
+      "args": {"forwards": false},
+      "context": [
+        { "key": "read_only", "operator": "not_equal" },
+        { "key": "auto_complete_visible", "operand": false },
+        { "key": "has_snippet", "operand": false  },
+        { "key": "has_next_field", "operand": false },
+        { "key": "just_hippie_completed" },
     ]}
 ]
 """)
