@@ -256,7 +256,7 @@ def find_char(primer_rest, item, item_l, start):
             return pos, start - 1 - pos
         raise ValueError(f"can't match {primer_rest!r} with {item!r}")
     if item.endswith(primer_rest):
-        return len(item) - len(primer_rest), 0
+        return len(item) - len(primer_rest), 1
     return first_seen, first_seen - (start - 1)
 
 
