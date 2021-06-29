@@ -213,7 +213,7 @@ def fuzzy_score(primer, item):
     prev = -1
     item_l = item.lower()
     primer_l = primer.lower()
-    for idx, (c, cl) in enumerate(zip(primer, primer_l)):
+    for idx in range(len(primer)):
         try:
             pos, _score = find_char(primer_l[idx:], item, item_l, prev + 1)
         except ValueError:
@@ -222,8 +222,8 @@ def fuzzy_score(primer, item):
         score += 2 * _score
         if pos == 0:
             score -= 1
-        if _score == 0 and c == item[pos]:
-            score -= 0.5 if c == cl else 2
+        if _score == 0 and primer[idx] == item[pos]:
+            score -= 0.5 if primer[idx] == primer_l[idx] else 2
 
         if score > 10:
             return None
