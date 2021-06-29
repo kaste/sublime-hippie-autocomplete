@@ -209,13 +209,12 @@ def fuzzyfind(primer, collection, sort_results=True):
 
 
 def fuzzy_score(primer, item):
-    score = 0
-    prev = -1
+    pos, score = -1, 0
     item_l = item.lower()
     primer_l = primer.lower()
     for idx in range(len(primer)):
         try:
-            pos, _score = find_char(primer_l[idx:], item, item_l, prev + 1)
+            pos, _score = find_char(primer_l[idx:], item, item_l, pos + 1)
         except ValueError:
             return None
 
@@ -227,7 +226,6 @@ def fuzzy_score(primer, item):
 
         if score > 10:
             return None
-        prev = pos
 
     return (score, len(item))
 
