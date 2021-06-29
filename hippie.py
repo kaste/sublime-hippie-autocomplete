@@ -213,14 +213,11 @@ def fuzzy_score(primer, item):
     prev = -1
     item_l = item.lower()
     primer_l = primer.lower()
-    for idx, (c, cl) in enumerate(zip(primer, primer.lower())):
-        pos, _score = find_char(primer_l[idx:], item, prev + 1)
-        if pos == -1:
-            if prev > 1:
-                pos = item_l.rfind(cl, 0, prev)
-                _score = prev - pos
-            if pos == -1:
-                return None
+    for idx, (c, cl) in enumerate(zip(primer, primer_l)):
+        try:
+            pos, _score = find_char(primer_l[idx:], item, item_l, prev + 1)
+        except ValueError:
+            return None
 
         score += 2 * _score
         if pos == 0:
@@ -235,7 +232,7 @@ def fuzzy_score(primer, item):
     return (score, len(item))
 
 
-def find_char(primer_rest, item, start):
+def find_char(primer_rest, item, item_l, start):
     prev = ''
     first_seen = -1
     needle = primer_rest[0]
@@ -252,7 +249,12 @@ def find_char(primer_rest, item, start):
         prev = ch
 
     if first_seen == -1:
-        return -1, -1
+        if (
+            start > 1
+            and (pos := item_l.rfind(needle, 0, start - 1)) != -1
+        ):
+            return pos, start - 1 - pos
+        raise ValueError(f"can't match {primer_rest!r} with {item!r}")
     if item.endswith(primer_rest):
         return len(item) - len(primer_rest), 0
     return first_seen, first_seen - (start - 1)
