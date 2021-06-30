@@ -137,20 +137,30 @@ class HippieListener(sublime_plugin.EventListener):
 
     def on_query_context(self, view, key, operator, operand, match_all) -> Optional[bool]:
         if key == "happy_hippie":
-            return self.happy_hippie_key(view, key, operator, operand, match_all)
+            if operator != sublime.OP_EQUAL:
+                print(f"Context '{key}' only supports operator 'equal'.")
+                return False
+
+            if operand is not True:
+                print(f"Context '{key}' only supports operand 'true'.")
+                return False
+
+            return self.happy_hippie_key(view, operator, operand, match_all)
+
         elif key == "just_hippie_completed":
-            return self.just_hippie_completed_key(view, key, operator, operand, match_all)
+            if operator != sublime.OP_EQUAL:
+                print(f"Context '{key}' only supports operator 'equal'.")
+                return False
+
+            if operand is not True:
+                print(f"Context '{key}' only supports operand 'true'.")
+                return False
+
+            return self.just_hippie_completed_key(view, operator, operand, match_all)
+
         return None
 
-    def happy_hippie_key(self, view, key, operator, operand, match_all) -> bool:
-        if operator != sublime.OP_EQUAL:
-            print(f"Context '{key}' only supports operator 'equal'.")
-            return False
-
-        if operand is not True:
-            print(f"Context '{key}' only supports operand 'true'.")
-            return False
-
+    def happy_hippie_key(self, view, operator, operand, match_all) -> bool:
         char_class = _get_char_class(view)
         re_cc = re.compile(r"{}+".format(char_class))
         for s in view.sel():
@@ -169,7 +179,7 @@ class HippieListener(sublime_plugin.EventListener):
         return True
 
     def just_hippie_completed_key(
-        self, view, key, operator, operand, match_all
+        self, view, operator, operand, match_all
     ) -> bool:
         global last_view, matching, last_suggestion
         primer = get_primer(view)
