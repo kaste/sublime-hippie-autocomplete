@@ -57,7 +57,7 @@ class Completions:
     def __init__(self, view: sublime.View, primer: str, completions: Iterable[str]):
         self.view = view
         self.initial_primer = primer
-        self._val = ""
+        self._val = None  # type: Optional[str]
         self._completions = \
             back_n_forth_iterator(
                 throw_if_empty(
