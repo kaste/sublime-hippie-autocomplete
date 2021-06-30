@@ -60,6 +60,16 @@ def get_primer(view: sublime.View) -> str:
     return view.substr(primer_region)
 
 
+def throw_if_empty(it: Iterator[T]) -> Iterator[T]:
+    fval = next(it)
+    yield fval
+    sval = next(it)
+    if fval == sval:
+        raise ValueError("no completions available")
+    yield sval
+    yield from it
+
+
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     @print_runtime("completion")
     def run(self, edit, forwards=True) -> None:
@@ -94,20 +104,17 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             )
             last_view = self.view
             initial_primer = primer
-            matching = back_n_forth_iterator(cycle(unique_everseen(_matching(
+            matching = back_n_forth_iterator(throw_if_empty(cycle(unique_everseen(_matching(
                 initial_primer,
                 exclude={word_under_cursor}
-            ))))
+            )))))
             next(matching)  # skip the `primer` we added at the front
 
-        if forwards:
-            last_suggestion = next(matching)
-        else:
-            try:
-                last_suggestion = matching.prev()
-            except ValueError:
-                window.status_message("at first suggestions")
-                return
+        try:
+            last_suggestion = next(matching) if forwards else matching.prev()
+        except ValueError:
+            window.status_message("No available completions")
+            return
 
         for region in self.view.sel():
             self.view.replace(
