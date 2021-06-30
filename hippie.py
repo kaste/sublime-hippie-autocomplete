@@ -111,11 +111,16 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             yield primer
             if primer in history[window]:
                 yield history[window][primer]
-            views_index = index_for_view(self.view)
-            yield from fuzzyfind(primer, views_index - exclude)
-            yield from fuzzyfind(
-                primer, index_for_other_views(self.view) - views_index
-            )
+            active_view = window.active_view()
+            if active_view and active_view != self.view:  # for input panels
+                views_index = index_for_view(active_view)
+                yield from fuzzyfind(primer, views_index - exclude)
+            else:
+                views_index = index_for_view(self.view)
+                yield from fuzzyfind(primer, views_index - exclude)
+                yield from fuzzyfind(
+                    primer, index_for_other_views(self.view) - views_index
+                )
 
         if not current_completions.is_valid(self.view, primer):
             word_under_cursor = (
