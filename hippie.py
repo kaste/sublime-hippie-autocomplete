@@ -123,22 +123,23 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     @print_runtime("completion")
     def run(self, edit, forwards=True) -> None:
         global current_completions
-        window = self.view.window()
+        view = self.view
+        window = view.window()
         assert window
 
         primers = {
-            self.view.substr(word_start(self.view, r))
-            for r in self.view.sel()
+            view.substr(word_start(view, r))
+            for r in view.sel()
         }
         if len(primers) != 1:
             return
 
         primer = primers.pop()
-        if not current_completions.is_valid(self.view, primer):
+        if not current_completions.is_valid(view, primer):
             current_completions = Completions(
-                self.view,
+                view,
                 primer,
-                query_completions(self.view, primer)
+                query_completions(view, primer)
             )
             # skip the `primer` we added at the front
             current_completions.next_suggestion()
@@ -149,10 +150,10 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             window.status_message("No available completions")
             return
 
-        for region in self.view.sel():
-            self.view.replace(
+        for region in view.sel():
+            view.replace(
                 edit,
-                word_start(self.view, region),
+                word_start(view, region),
                 suggestion
             )
 
