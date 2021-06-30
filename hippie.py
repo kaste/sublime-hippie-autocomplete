@@ -57,7 +57,7 @@ class Completions:
     def __init__(self, view: sublime.View, primer: str, completions: Iterable[str]):
         self.view = view
         self.initial_primer = primer
-        self.last_suggestion = ""
+        self._val = ""
         self._completions = \
             back_n_forth_iterator(
                 throw_if_empty(
@@ -67,12 +67,12 @@ class Completions:
     def is_valid(self, view, primer):
         return (
             view == self.view
-            and primer == self.last_suggestion
+            and primer == self._val
         )
 
     def next_suggestion(self, forwards=True) -> str:
         val = next(self._completions) if forwards else self._completions.prev()
-        self.last_suggestion = val
+        self._val = val
         return val
 
 
