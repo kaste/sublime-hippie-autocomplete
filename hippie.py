@@ -91,7 +91,7 @@ history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
 current_completions = Completions(sublime.View(-1), "", [])  # type: Completions
 
 
-def query_completions(view, primer, exclude) -> Iterator[str]:
+def query_completions(view, primer) -> Iterator[str]:
     window = view.window()
     assert window
     # Add `primer` at the front to allow going back to it, either
@@ -100,6 +100,8 @@ def query_completions(view, primer, exclude) -> Iterator[str]:
     yield primer
     if primer in history[window]:
         yield history[window][primer]
+
+    exclude = {view.substr(view.word(r)) for r in view.sel()}
     active_view = window.active_view()
     if active_view and active_view != view:  # for input panels
         views_index = index_for_view(active_view)
@@ -125,15 +127,10 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         primer = self.view.substr(primer_region)
 
         if not current_completions.is_valid(self.view, primer):
-            word_under_cursor = (
-                primer
-                if word_region == primer_region
-                else self.view.substr(word_region)
-            )
             current_completions = Completions(
                 self.view,
                 primer,
-                query_completions(self.view, primer, exclude={word_under_cursor})
+                query_completions(self.view, primer)
             )
             # skip the `primer` we added at the front
             current_completions.next_suggestion()
