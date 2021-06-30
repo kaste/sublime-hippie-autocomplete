@@ -91,6 +91,27 @@ history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
 current_completions = Completions(sublime.View(-1), "", [])  # type: Completions
 
 
+def query_completions(view, primer, exclude) -> Iterator[str]:
+    window = view.window()
+    assert window
+    # Add `primer` at the front to allow going back to it, either
+    # using `shift+tab` or when cycling through all possible
+    # completions.
+    yield primer
+    if primer in history[window]:
+        yield history[window][primer]
+    active_view = window.active_view()
+    if active_view and active_view != view:  # for input panels
+        views_index = index_for_view(active_view)
+        yield from fuzzyfind(primer, views_index - exclude)
+    else:
+        views_index = index_for_view(view)
+        yield from fuzzyfind(primer, views_index - exclude)
+        yield from fuzzyfind(
+            primer, index_for_other_views(view) - views_index
+        )
+
+
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     @print_runtime("completion")
     def run(self, edit, forwards=True) -> None:
@@ -103,25 +124,6 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         primer_region = sublime.Region(word_region.a, first_sel.end())
         primer = self.view.substr(primer_region)
 
-        def _matching(primer, exclude) -> Iterator[str]:
-            assert window  # fix false mypy complain
-            # Add `primer` at the front to allow going back to it, either
-            # using `shift+tab` or when cycling through all possible
-            # completions.
-            yield primer
-            if primer in history[window]:
-                yield history[window][primer]
-            active_view = window.active_view()
-            if active_view and active_view != self.view:  # for input panels
-                views_index = index_for_view(active_view)
-                yield from fuzzyfind(primer, views_index - exclude)
-            else:
-                views_index = index_for_view(self.view)
-                yield from fuzzyfind(primer, views_index - exclude)
-                yield from fuzzyfind(
-                    primer, index_for_other_views(self.view) - views_index
-                )
-
         if not current_completions.is_valid(self.view, primer):
             word_under_cursor = (
                 primer
@@ -131,7 +133,7 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             current_completions = Completions(
                 self.view,
                 primer,
-                _matching(primer, exclude={word_under_cursor})
+                query_completions(self.view, primer, exclude={word_under_cursor})
             )
             # skip the `primer` we added at the front
             current_completions.next_suggestion()
