@@ -96,12 +96,13 @@ current_completions = Completions(sublime.View(-1), "", [])  # type: Completions
 
 
 def query_completions(view, primer) -> Iterator[str]:
-    window = view.window()
-    assert window
     # Add `primer` at the front to allow going back to it, either
     # using `shift+tab` or when cycling through all possible
     # completions.
     yield primer
+
+    window = view.window()
+    assert window
     if primer in history[window]:
         yield history[window][primer]
 
