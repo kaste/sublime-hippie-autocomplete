@@ -15,10 +15,6 @@ T = TypeVar("T")
 flatten = chain.from_iterable
 VIEW_TOO_BIG = 1000000
 
-index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
-history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
-current_completions = None  # type: Optional[Completions]
-
 
 def plugin_loaded():
     install_low_priority_package()
@@ -58,7 +54,7 @@ def get_primer(view: sublime.View) -> str:
 
 
 class Completions:
-    def __init__(self, view: sublime.View, primer: str, completions: Iterator[str]):
+    def __init__(self, view: sublime.View, primer: str, completions: Iterable[str]):
         self.view = view
         self.initial_primer = primer
         self.last_suggestion = ""
@@ -90,6 +86,11 @@ def throw_if_empty(it: Iterator[T]) -> Iterator[T]:
     yield from it
 
 
+index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
+history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
+current_completions = Completions(sublime.View(-1), "", [])  # type: Completions
+
+
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     @print_runtime("completion")
     def run(self, edit, forwards=True) -> None:
@@ -116,7 +117,7 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
                 primer, index_for_other_views(self.view) - views_index
             )
 
-        if not current_completions or not current_completions.is_valid(self.view, primer):
+        if not current_completions.is_valid(self.view, primer):
             word_under_cursor = (
                 primer
                 if word_region == primer_region
@@ -170,7 +171,6 @@ class HippieListener(sublime_plugin.EventListener):
             or (name == "delete_word" and args == {"forward": False})
         ):
             if self.just_hippie_completed_key(view, sublime.OP_EQUAL, True, True):
-                assert current_completions
                 window = view.window()
                 assert window
                 history[window].pop(current_completions.initial_primer, None)
@@ -223,9 +223,7 @@ class HippieListener(sublime_plugin.EventListener):
     ) -> bool:
         global current_completions
         primer = get_primer(view)
-        if current_completions and current_completions.is_valid(view, primer):
-            return True
-        return False
+        return current_completions.is_valid(view, primer)
 
 
 def index_for_view(view: sublime.View) -> Set[str]:
