@@ -48,8 +48,7 @@ def print_runtime(message):
 
 def get_primer(view: sublime.View) -> str:
     first_sel = view.sel()[0]
-    word_region = view.word(first_sel)
-    primer_region = sublime.Region(word_region.a, first_sel.end())
+    primer_region = word_start(view, first_sel)
     return view.substr(primer_region)
 
 
@@ -152,7 +151,7 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         for region in self.view.sel():
             self.view.replace(
                 edit,
-                sublime.Region(self.view.word(region).a, region.end()),
+                word_start(self.view, region),
                 suggestion
             )
 
