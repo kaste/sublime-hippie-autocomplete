@@ -53,6 +53,11 @@ def get_primer(view: sublime.View) -> str:
     return view.substr(primer_region)
 
 
+def word_start(view, region):
+    word_region = view.word(region)
+    return sublime.Region(word_region.begin(), region.end())
+
+
 class Completions:
     def __init__(self, view: sublime.View, primer: str, completions: Iterable[str]):
         self.view = view
@@ -121,11 +126,14 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
         window = self.view.window()
         assert window
 
-        first_sel = self.view.sel()[0]
-        word_region = self.view.word(first_sel)
-        primer_region = sublime.Region(word_region.a, first_sel.end())
-        primer = self.view.substr(primer_region)
+        primers = {
+            self.view.substr(word_start(self.view, r))
+            for r in self.view.sel()
+        }
+        if len(primers) != 1:
+            return
 
+        primer = primers.pop()
         if not current_completions.is_valid(self.view, primer):
             current_completions = Completions(
                 self.view,
