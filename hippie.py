@@ -16,11 +16,8 @@ flatten = chain.from_iterable
 VIEW_TOO_BIG = 1000000
 
 index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
-last_view = None  # type: Optional[sublime.View]
-initial_primer = ""  # type: str
-matching = None  # type: Optional[back_n_forth_iterator[str]]
-last_suggestion = None  # type: Optional[str]
 history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
+current_completions = None  # type: Optional[Completions]
 
 
 def plugin_loaded():
@@ -60,6 +57,29 @@ def get_primer(view: sublime.View) -> str:
     return view.substr(primer_region)
 
 
+class Completions:
+    def __init__(self, view: sublime.View, primer: str, completions: Iterator[str]):
+        self.view = view
+        self.initial_primer = primer
+        self.last_suggestion = ""
+        self._completions = \
+            back_n_forth_iterator(
+                throw_if_empty(
+                    cycle(
+                        unique_everseen(completions))))
+
+    def is_valid(self, view, primer):
+        return (
+            view == self.view
+            and primer == self.last_suggestion
+        )
+
+    def next_suggestion(self, forwards=True) -> str:
+        val = next(self._completions) if forwards else self._completions.prev()
+        self.last_suggestion = val
+        return val
+
+
 def throw_if_empty(it: Iterator[T]) -> Iterator[T]:
     fval = next(it)
     yield fval
@@ -73,7 +93,7 @@ def throw_if_empty(it: Iterator[T]) -> Iterator[T]:
 class HippieWordCompletionCommand(sublime_plugin.TextCommand):
     @print_runtime("completion")
     def run(self, edit, forwards=True) -> None:
-        global last_view, matching, initial_primer, last_suggestion
+        global current_completions
         window = self.view.window()
         assert window
 
@@ -96,22 +116,22 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
                 primer, index_for_other_views(self.view) - views_index
             )
 
-        if last_view is not self.view or not matching or primer != last_suggestion:
+        if not current_completions or not current_completions.is_valid(self.view, primer):
             word_under_cursor = (
                 primer
                 if word_region == primer_region
                 else self.view.substr(word_region)
             )
-            last_view = self.view
-            initial_primer = primer
-            matching = back_n_forth_iterator(throw_if_empty(cycle(unique_everseen(_matching(
-                initial_primer,
-                exclude={word_under_cursor}
-            )))))
-            next(matching)  # skip the `primer` we added at the front
+            current_completions = Completions(
+                self.view,
+                primer,
+                _matching(primer, exclude={word_under_cursor})
+            )
+            # skip the `primer` we added at the front
+            current_completions.next_suggestion()
 
         try:
-            last_suggestion = next(matching) if forwards else matching.prev()
+            suggestion = current_completions.next_suggestion(forwards)
         except ValueError:
             window.status_message("No available completions")
             return
@@ -120,13 +140,14 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             self.view.replace(
                 edit,
                 sublime.Region(self.view.word(region).a, region.end()),
-                last_suggestion
+                suggestion
             )
 
-        if last_suggestion == initial_primer:
+        initial_primer = current_completions.initial_primer
+        if suggestion == initial_primer:
             history[window].pop(initial_primer, None)
         else:
-            history[window][initial_primer] = last_suggestion
+            history[window][initial_primer] = suggestion
 
 
 class HippieListener(sublime_plugin.EventListener):
@@ -143,15 +164,16 @@ class HippieListener(sublime_plugin.EventListener):
         history.pop(window, None)
 
     def on_text_command(self, view, name, args):
-        global initial_primer
+        global current_completions
         if (
             name in ["undo", "soft_undo"]
             or (name == "delete_word" and args == {"forward": False})
         ):
             if self.just_hippie_completed_key(view, sublime.OP_EQUAL, True, True):
+                assert current_completions
                 window = view.window()
                 assert window
-                history[window].pop(initial_primer, None)
+                history[window].pop(current_completions.initial_primer, None)
 
     def on_query_context(self, view, key, operator, operand, match_all) -> Optional[bool]:
         if key == "happy_hippie":
@@ -199,9 +221,9 @@ class HippieListener(sublime_plugin.EventListener):
     def just_hippie_completed_key(
         self, view, operator, operand, match_all
     ) -> bool:
-        global last_view, matching, last_suggestion
+        global current_completions
         primer = get_primer(view)
-        if view == last_view and matching and primer == last_suggestion:
+        if current_completions and current_completions.is_valid(view, primer):
             return True
         return False
 
