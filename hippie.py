@@ -408,6 +408,7 @@ keymap = json("""
         { "key": "auto_complete_visible", "operand": false },
         { "key": "has_snippet", "operand": false  },
         { "key": "has_next_field", "operand": false },
+        { "key": "overlay_visible", "operand": false },
         { "key": "happy_hippie" },
     ]},
     { "keys": ["shift+tab"], "command": "hippie_word_completion",
@@ -417,6 +418,7 @@ keymap = json("""
         { "key": "auto_complete_visible", "operand": false },
         { "key": "has_snippet", "operand": false  },
         { "key": "has_next_field", "operand": false },
+        { "key": "overlay_visible", "operand": false },
         { "key": "just_hippie_completed" },
     ]}
 ]
