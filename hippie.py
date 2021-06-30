@@ -64,7 +64,7 @@ class Completions:
                     cycle(
                         unique_everseen(completions))))
 
-    def is_valid(self, view, primer):
+    def is_valid(self, view: sublime.View, primer: str) -> bool:
         return (
             view == self.view
             and primer == self._val
