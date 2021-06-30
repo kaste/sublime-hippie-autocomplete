@@ -135,6 +135,17 @@ class HippieListener(sublime_plugin.EventListener):
         global history
         history.pop(window, None)
 
+    def on_text_command(self, view, name, args):
+        global initial_primer
+        if (
+            name in ["undo", "soft_undo"]
+            or (name == "delete_word" and args == {"forward": False})
+        ):
+            if self.just_hippie_completed_key(view, sublime.OP_EQUAL, True, True):
+                window = view.window()
+                assert window
+                history[window].pop(initial_primer, None)
+
     def on_query_context(self, view, key, operator, operand, match_all) -> Optional[bool]:
         if key == "happy_hippie":
             if operator != sublime.OP_EQUAL:
