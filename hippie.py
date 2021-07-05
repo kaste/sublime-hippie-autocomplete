@@ -80,6 +80,39 @@ class Completions:
         return val
 
 
+class back_n_forth_iterator(Generic[T]):
+    def __init__(self, iterable: Iterable[T]) -> None:
+        self._it = iter(iterable)  # type: Iterator[T]
+        self._index = None  # type: Optional[int]
+        self._cache = []  # type: List[T]
+
+    def __iter__(self) -> Iterator[T]:
+        return self
+
+    def __next__(self) -> T:
+        if self._index is not None:
+            if self._index < len(self._cache) - 1:
+                self._index += 1
+                return self._cache[self._index]
+            else:
+                self._index = None
+
+        val = next(self._it)
+        self._cache.append(val)
+        return val
+
+    next == __next__
+
+    def prev(self) -> T:
+        if self._index is None:
+            self._index = len(self._cache) - 1
+        elif self._index <= 0:
+            raise ValueError("can't rewind any further")
+        self._index -= 1
+        val = self._cache[self._index]
+        return val
+
+
 def throw_if_empty(it: Iterator[T]) -> Iterator[T]:
     fval = next(it)
     yield fval
@@ -88,6 +121,15 @@ def throw_if_empty(it: Iterator[T]) -> Iterator[T]:
         raise ValueError("no completions available")
     yield sval
     yield from it
+
+
+def unique_everseen(seq: Iterable[T]) -> Iterator[T]:
+    """Iterates over sequence skipping duplicates"""
+    seen = set()
+    for item in seq:
+        if item not in seen:
+            seen.add(item)
+            yield item
 
 
 index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
@@ -352,48 +394,6 @@ def find_char(primer_rest, item, item_l, start: int) -> Tuple[int, float]:
     if item.endswith(primer_rest):
         return len(item) - len(primer_rest), 1
     return first_seen, first_seen - (start - 1)
-
-
-def unique_everseen(seq: Iterable[T]) -> Iterator[T]:
-    """Iterates over sequence skipping duplicates"""
-    seen = set()
-    for item in seq:
-        if item not in seen:
-            seen.add(item)
-            yield item
-
-
-class back_n_forth_iterator(Generic[T]):
-    def __init__(self, iterable: Iterable[T]) -> None:
-        self._it = iter(iterable)  # type: Iterator[T]
-        self._index = None  # type: Optional[int]
-        self._cache = []  # type: List[T]
-
-    def __iter__(self) -> Iterator[T]:
-        return self
-
-    def __next__(self) -> T:
-        if self._index is not None:
-            if self._index < len(self._cache) - 1:
-                self._index += 1
-                return self._cache[self._index]
-            else:
-                self._index = None
-
-        val = next(self._it)
-        self._cache.append(val)
-        return val
-
-    next == __next__
-
-    def prev(self) -> T:
-        if self._index is None:
-            self._index = len(self._cache) - 1
-        elif self._index <= 0:
-            raise ValueError("can't rewind any further")
-        self._index -= 1
-        val = self._cache[self._index]
-        return val
 
 
 #  Install a *lowest* priority package for the key binding
