@@ -1,13 +1,15 @@
 import sublime
 import sublime_plugin
 from collections import defaultdict
+from functools import partial
 from itertools import chain, cycle
 from pathlib import Path
 import re
 
 
 from typing import (
-    Dict, Generic, Iterable, Iterator, List, Optional, Set, Tuple, TypeVar
+    Callable, Dict, Generic, Iterable, Iterator, List, Optional, Set,
+    Tuple, TypeVar
 )
 T = TypeVar("T")
 
@@ -58,7 +60,7 @@ def word_start(view, region):
 
 
 class Completions:
-    def __init__(self, view: sublime.View, primer: str, completions: Iterable[str]):
+    def __init__(self, view: sublime.View, primer: str, completions: Iterable[Tuple[str, Tuple[int, ...]]]):
         self.view = view
         self.initial_primer = primer
         self._val = None  # type: Optional[str]
@@ -74,9 +76,9 @@ class Completions:
             and primer == self._val
         )
 
-    def next_suggestion(self, forwards=True) -> str:
+    def next_suggestion(self, forwards=True) -> Tuple[str, Tuple[int, ...]]:
         val = next(self._completions) if forwards else self._completions.prev()
-        self._val = val
+        self._val = val[0]
         return val
 
 
@@ -133,15 +135,15 @@ def unique_everseen(seq: Iterable[T]) -> Iterator[T]:
 
 
 index = {}  # type: Dict[sublime.View, Tuple[int, Set[str]]]
-history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, str]]
+history = defaultdict(dict)  # type: Dict[sublime.Window, Dict[str, Tuple[str, Tuple[int, ...]]]]
 current_completions = Completions(sublime.View(-1), "", [])  # type: Completions
 
 
-def query_completions(view, primer) -> Iterator[str]:
+def query_completions(view: sublime.View, primer: str) -> Iterator[Tuple[str, Tuple[int, ...]]]:
     # Add `primer` at the front to allow going back to it, either
     # using `shift+tab` or when cycling through all possible
     # completions.
-    yield primer
+    yield primer, tuple()
 
     window = view.window()
     assert window
@@ -187,26 +189,78 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             current_completions.next_suggestion()
 
         try:
-            suggestion = current_completions.next_suggestion(forwards)
+            suggestion, positions = current_completions.next_suggestion(forwards)
         except ValueError:
             window.status_message("No available completions")
             return
 
+        char_regions = []
         for region in view.sel():
+            word = word_start(view, region)
             view.replace(
                 edit,
-                word_start(view, region),
+                word,
                 suggestion
             )
+            char_regions += [
+                sublime.Region(word.a + p, word.a + p + 1)
+                for p in positions
+            ]
+
+        view.add_regions("hippie_matched_char", char_regions, scope='hippie-char')
+        sublime.set_timeout(throttled(clear_char_highlights, view), 800)
+        global IGNORE_MODIFIED, IGNORE_SELECTION_MODIFIED
+        IGNORE_MODIFIED = True
+        IGNORE_SELECTION_MODIFIED = True
 
         initial_primer = current_completions.initial_primer
         if suggestion == initial_primer:
             history[window].pop(initial_primer, None)
         else:
-            history[window][initial_primer] = suggestion
+            history[window][initial_primer] = (suggestion, positions)
+
+
+IGNORE_MODIFIED = False
+IGNORE_SELECTION_MODIFIED = False
+THROTTLED_CACHE = {}
+THROTTLED_LOCK = threading.Lock()
+
+
+def throttled(fn, *args, **kwargs):
+    # type: (...) -> Callable[[], None]
+    token = (fn,) + args
+    action = partial(fn, *args, **kwargs)
+    with THROTTLED_LOCK:
+        THROTTLED_CACHE[token] = action
+
+    def task():
+        with THROTTLED_LOCK:
+            ok = THROTTLED_CACHE.get(token) == action
+        if ok:
+            action()
+
+    return task
+
+
+def clear_char_highlights(view):
+    view.add_regions("hippie_matched_char", [])
 
 
 class HippieListener(sublime_plugin.EventListener):
+    def on_modified(self, view):
+        global IGNORE_MODIFIED
+        if IGNORE_MODIFIED:
+            IGNORE_MODIFIED = False
+        else:
+            clear_char_highlights(view)
+
+    def on_selection_modified(self, view):
+        global IGNORE_SELECTION_MODIFIED
+        if IGNORE_SELECTION_MODIFIED:
+            IGNORE_SELECTION_MODIFIED = False
+        else:
+            clear_char_highlights(view)
+
     def on_init(self, views):
         for view in views:
             index_for_view(view)
@@ -318,7 +372,7 @@ def other_views(view):
     return (v for v in view.window().views() if v != view)
 
 
-def fuzzyfind(primer: str, collection: Iterable[str]) -> List[str]:
+def fuzzyfind(primer: str, collection: Iterable[str]) -> List[Tuple[str, Tuple[int, ...]]]:
     """
     Args:
         primer (str): A partial string which is typically entered by a user.
@@ -340,19 +394,21 @@ def fuzzyfind(primer: str, collection: Iterable[str]) -> List[str]:
         if score := fuzzy_score(primer, item):
             suggestions.append((score, item))
 
-    return [z[-1] for z in sorted(suggestions)]
+    return [(word, positions) for (_, _, positions), word in sorted(suggestions)]
 
 
-def fuzzy_score(primer: str, item: str) -> Optional[Tuple[float, int]]:
+def fuzzy_score(primer: str, item: str) -> Optional[Tuple[float, int, Tuple[int, ...]]]:
     pos, score = -1, 0.0
     item_l = item.lower()
     primer_l = primer.lower()
+    positions = []  # type: List[int]
     for idx in range(len(primer)):
         try:
             pos, _score = find_char(primer_l[idx:], item, item_l, pos + 1)
         except ValueError:
             return None
 
+        positions.append(pos)
         score += 2 * _score
         if pos == 0:
             score -= 1
@@ -362,7 +418,7 @@ def fuzzy_score(primer: str, item: str) -> Optional[Tuple[float, int]]:
         if score > 10:
             return None
 
-    return (score, len(item))
+    return (score, len(item), tuple(positions))
 
 
 def find_char(primer_rest, item, item_l, start: int) -> Tuple[int, float]:

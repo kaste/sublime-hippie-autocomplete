@@ -59,4 +59,4 @@ class TestFuzyyFind(DeferrableTestCase):
                 lambda: self.assertEqual(fuzzyfind(primer, words)[0], best_completion)
             )
         else:
-            self.assertEqual(fuzzyfind(primer, words)[0], best_completion)
+            self.assertEqual(fuzzyfind(primer, words)[0][0], best_completion)
