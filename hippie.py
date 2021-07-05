@@ -318,7 +318,7 @@ def other_views(view):
     return (v for v in view.window().views() if v != view)
 
 
-def fuzzyfind(primer: str, collection: Iterable[str], sort_results=True) -> List[str]:
+def fuzzyfind(primer: str, collection: Iterable[str]) -> List[str]:
     """
     Args:
         primer (str): A partial string which is typically entered by a user.
@@ -340,10 +340,7 @@ def fuzzyfind(primer: str, collection: Iterable[str], sort_results=True) -> List
         if score := fuzzy_score(primer, item):
             suggestions.append((score, item))
 
-    if sort_results:
-        return [z[-1] for z in sorted(suggestions)]
-    else:
-        return [z[-1] for z in sorted(suggestions, key=lambda x: x[0])]
+    return [z[-1] for z in sorted(suggestions)]
 
 
 def fuzzy_score(primer: str, item: str) -> Optional[Tuple[float, int]]:
