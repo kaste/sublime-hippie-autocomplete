@@ -194,7 +194,7 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
             window.status_message("No available completions")
             return
 
-        char_regions = []
+        char_regions = defaultdict(list)  # type: Dict[str, List[sublime.Region]]
         for region in view.sel():
             word = word_start(view, region)
             view.replace(
@@ -202,13 +202,33 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
                 word,
                 suggestion
             )
-            char_regions += [
+            scope = view.scope_name(word.a)
+            char_regions[scope] += [
                 sublime.Region(word.a + p, word.a + p + 1)
                 for p in positions
             ]
 
-        view.add_regions("hippie_matched_char", char_regions, scope='hippie-char')
-        sublime.set_timeout(throttled(clear_char_highlights, view), 800)
+        keys = set()
+        for scope, regions in char_regions.items():
+            key = "hippie_matched_char" + scope
+            keys.add(key)
+            view.add_regions(
+                key,
+                regions,
+                scope=scope,
+                flags=(
+                    sublime.DRAW_NO_OUTLINE
+                    | sublime.DRAW_NO_FILL
+                    | sublime.DRAW_SOLID_UNDERLINE
+                )
+            )
+
+        global REGION_KEYS
+        for key in REGION_KEYS - keys:
+            view.add_regions(key, [])
+        REGION_KEYS.update(keys)
+
+        # sublime.set_timeout(throttled(clear_char_highlights, view), 1200)
         global IGNORE_MODIFIED, IGNORE_SELECTION_MODIFIED
         IGNORE_MODIFIED = True
         IGNORE_SELECTION_MODIFIED = True
@@ -222,6 +242,7 @@ class HippieWordCompletionCommand(sublime_plugin.TextCommand):
 
 IGNORE_MODIFIED = False
 IGNORE_SELECTION_MODIFIED = False
+REGION_KEYS = set()  # type: Set[str]
 THROTTLED_CACHE = {}
 THROTTLED_LOCK = threading.Lock()
 
@@ -243,7 +264,10 @@ def throttled(fn, *args, **kwargs):
 
 
 def clear_char_highlights(view):
-    view.add_regions("hippie_matched_char", [])
+    global REGION_KEYS
+    for key in REGION_KEYS:
+        view.add_regions(key, [])
+    REGION_KEYS.clear()
 
 
 class HippieListener(sublime_plugin.EventListener):
